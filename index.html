@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haiku 5-7-5 Syllable Composer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-emerald-950 via-teal-950 to-cyan-950 text-white min-h-screen">
+<script>
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+// Syllable counting (English heuristic)
+function countSyllables(word){
+  if(!word) return 0;
+  word=word.toLowerCase().replace(/[^a-z]/g,'');
+  if(word.length<=2) return word.length>0?1:0;
+  word=word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/,'');
+  word=word.replace(/^y/,'');
+  const m=word.match(/[aeiouy]{1,2}/g);
+  return m?m.length:1;
+}
+
+function lineSyllables(line){
+  return line.trim().split(/\s+/).filter(w=>w).reduce((s,w)=>s+countSyllables(w),0);
+}
+
+const KIGO={
+  Spring:['cherry blossom','spring rain','warbler','tulip','melting snow','new leaves','robin','thaw','daffodil','blossoms','budding','crocus','mud','equinox','tadpole','frog','dew','petals','swallow','nesting'],
+  Summer:['cicada','sunflower','thunderstorm','firefly','sunburn','heat wave','dragonfly','waterfall','ocean wave','cucumber','barefoot','cricket','humidity','lotus','monsoon','peach','sundial','mirage','tropics','starfish'],
+  Autumn:['harvest moon','falling leaves','maple','pumpkin','acorn','chrysanthemum','migration','scarecrow','persimmon','frost','twilight','migration','chestnut','bonfire','overcast','dusk','woodsmoke','cornfield','harvest','bare tree'],
+  Winter:['snowfall','frozen pond','bare branches','wool coat','solstice','icicle','crow','bare mountain','blizzard','fireside','sleet','silence','frostbite','numb fingers','new year','barren field','cold moon','frozen breath','skates','dormant']
+};
+
+const CLASSIC_HAIKU=[
+  {text:'An old silent pond\nA frog jumps into the pond\nSplash! Silence again',author:'Matsuo Bashō'},
+  {text:'Over the wintry\nforest, winds howl in rage\nwith no leaves to blow',author:'Natsume Sōseki'},
+  {text:'In the cicada\'s cry\nno sign can foretell\nhow soon it must die',author:'Matsuo Bashō'},
+  {text:'Light of the moon\nMoves west, flowers\' shadows\nCreep eastward',author:'Yosa Buson'},
+  {text:'A summer river being crossed\nhow pleasing\nwith sandals in my hands',author:'Yosa Buson'},
+  {text:'The first cold shower\neven the monkey seems to want\na little coat of straw',author:'Matsuo Bashō'},
+  {text:'O snail\nClimb Mount Fuji\nBut slowly, slowly!',author:'Kobayashi Issa'}
+];
+
+let lines=['','',''];
+let savedHaikus=[];
+let activeTab='compose';
+let activeSeason='Spring';
+
+try{ savedHaikus=JSON.parse(localStorage.getItem('haikus_v1'))||[]; }catch{ savedHaikus=[]; }
+
+function saveHaikus(){ localStorage.setItem('haikus_v1',JSON.stringify(savedHaikus)); }
+
+function targets(){ return [5,7,5]; }
+
+function getColor(actual, target){
+  if(actual===0) return 'text-gray-500';
+  if(actual===target) return 'text-green-400';
+  if(actual<target) return 'text-yellow-400';
+  return 'text-red-400';
+}
+function getBorder(actual, target){
+  if(actual===target) return 'border-green-500';
+  if(actual===0) return 'border-gray-600';
+  if(actual<target) return 'border-yellow-500';
+  return 'border-red-500';
+}
+
+function insertKigo(word){
+  // Insert into whatever line is focused — just append to first incomplete line
+  const t=targets();
+  for(let i=0;i<3;i++){
+    const cur=lineSyllables(lines[i]);
+    if(cur<t[i]){
+      lines[i]=(lines[i]?lines[i]+' ':'')+word;
+      render(); return;
+    }
+  }
+}
+
+function saveHaiku(){
+  const text=lines.map(l=>l.trim()).join('\n');
+  if(!text.trim()) return;
+  savedHaikus.unshift({text,date:new Date().toLocaleDateString()});
+  if(savedHaikus.length>50) savedHaikus=savedHaikus.slice(0,50);
+  saveHaikus();
+  render();
+}
+
+function deleteHaiku(i){ savedHaikus.splice(i,1); saveHaikus(); render(); }
+
+function copyHaiku(){
+  const text=lines.join('\n');
+  navigator.clipboard.writeText(text).then(()=>alert('Copied to clipboard!')).catch(()=>{
+    prompt('Copy this haiku:',text);
+  });
+}
+
+function randomInspiration(){
+  const h=CLASSIC_HAIKU[Math.floor(Math.random()*CLASSIC_HAIKU.length)];
+  document.getElementById('inspo').innerHTML=`
+    <div class="bg-teal-900/40 border border-teal-600 rounded-xl p-4 mt-3 italic text-center">
+      <div class="whitespace-pre text-teal-200">${escapeHtml(h.text)}</div>
+      <div class="text-xs text-gray-400 mt-2">— ${escapeHtml(h.author)}</div>
+    </div>`;
+}
+
+function render(){
+  const t=targets();
+  const syllCounts=lines.map(lineSyllables);
+  const allCorrect=syllCounts.every((s,i)=>s===t[i]);
+
+  const lineEditors=lines.map((line,i)=>{
+    const syl=syllCounts[i];
+    const border=getBorder(syl,t[i]);
+    const color=getColor(syl,t[i]);
+    return `
+      <div class="relative mb-3">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-xs text-gray-400">Line ${i+1} — target: ${t[i]} syllables</span>
+          <span class="font-bold text-sm ${color}">${syl}/${t[i]}</span>
+          ${syl===t[i]?'<span class="text-green-400 text-xs">✓</span>':''}
+        </div>
+        <input type="text" value="${escapeHtml(line)}"
+          oninput="lines[${i}]=this.value; updateLine(${i},this.value)"
+          class="w-full bg-gray-800/70 border-2 ${border} rounded-xl p-3 text-white text-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+          placeholder="Line ${i+1}...">
+      </div>`;
+  }).join('');
+
+  const kigoWords=KIGO[activeSeason].map(w=>`<button onclick="insertKigo('${escapeHtml(w)}')" class="bg-teal-900/60 hover:bg-teal-700 border border-teal-700 px-2 py-1 rounded text-xs transition">${escapeHtml(w)}</button>`).join('');
+
+  const savedList=savedHaikus.map((h,i)=>`
+    <div class="bg-gray-800/60 rounded-xl p-4 relative">
+      <pre class="text-teal-200 italic whitespace-pre-wrap font-serif mb-1">${escapeHtml(h.text)}</pre>
+      <div class="text-xs text-gray-500">${escapeHtml(h.date)}</div>
+      <button onclick="deleteHaiku(${i})" class="absolute top-2 right-2 text-red-400 hover:text-red-300 text-xs">✕</button>
+    </div>`).join('');
+
+  document.getElementById('app').innerHTML=`
+    <div class="max-w-2xl mx-auto p-6">
+      <div class="text-center mb-6">
+        <h1 class="text-3xl font-bold text-teal-300">🌸 Haiku Composer</h1>
+        <p class="text-gray-400 text-sm">5 – 7 – 5 syllables</p>
+      </div>
+      <div class="flex gap-1 mb-6 bg-gray-800/50 rounded-xl p-1">
+        ${['compose','gallery'].map(t=>`<button onclick="activeTab='${t}';render()" class="flex-1 py-2 rounded-lg text-sm font-semibold transition ${activeTab===t?'bg-teal-700 text-white':'text-gray-400 hover:text-white'}">${t==='compose'?'✍️ Compose':'🗂️ Gallery ('+savedHaikus.length+')'}</button>`).join('')}
+      </div>
+      ${activeTab==='compose'?`
+        <div class="bg-gray-900/60 rounded-2xl p-5 mb-4">
+          ${lineEditors}
+          <div class="flex gap-2 mt-2 flex-wrap">
+            <button onclick="saveHaiku()" class="bg-teal-600 hover:bg-teal-500 px-4 py-2 rounded-lg font-semibold text-sm ${allCorrect?'':'opacity-60'}">💾 Save Haiku</button>
+            <button onclick="copyHaiku()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm">📋 Copy</button>
+            <button onclick="lines=['','',''];render()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm">🗑 Clear</button>
+            <button onclick="randomInspiration()" class="bg-purple-800 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm">✨ Inspire Me</button>
+          </div>
+          <div id="inspo"></div>
+        </div>
+        <div class="bg-gray-900/60 rounded-2xl p-5">
+          <div class="flex items-center gap-2 mb-3 flex-wrap">
+            <span class="text-sm text-gray-400 font-semibold">Kigo (seasonal words):</span>
+            ${Object.keys(KIGO).map(s=>`<button onclick="activeSeason='${s}';render()" class="px-3 py-1 rounded-full text-xs font-semibold border transition ${activeSeason===s?'bg-teal-700 border-teal-500 text-white':'border-gray-600 text-gray-400 hover:text-white'}">${s}</button>`).join('')}
+          </div>
+          <div class="flex flex-wrap gap-2">${kigoWords}</div>
+        </div>`:`
+        <div class="flex flex-col gap-3">
+          ${savedHaikus.length===0?'<div class="text-center text-gray-500 py-12">No saved haikus yet. Compose one!</div>':savedList}
+        </div>`}
+    </div>`;
+}
+
+function updateLine(i, val){ lines[i]=val; }
+</script>
+<div id="app"></div>
+<script>render();</script>
+</body>
+</html>
